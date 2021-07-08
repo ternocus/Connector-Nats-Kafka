@@ -57,7 +57,7 @@ fn main() {
     };
 
     let natsKafkaThread =std::thread::spawn(move || {
-        natsKafkaConnection(nats_server_url, producer, nats_subject)
+        natsKafkaConnection(nats_server_url, producer, nats_subject);
     });
     let kafkaNatsThread = std::thread::spawn(move || {
        kafkaNatsConnection(nats_server_url_copy, consumer);
@@ -150,14 +150,9 @@ fn natsKafkaConnection(nats_server_url:String, producer:kafka::producer::Produce
                         },
                         None => {
                             if DEBUG {
-                                println!("NatsKafka thread: Recived from Nats server: {:?}, {}, data: {:?}", msg.reply, msg.subject, String::from_utf8_lossy(&msg.data));
+                                println!("NatsKafka thread: error to comunicate with nats server.");
                             }
-                            prod.send(&Record {
-                                topic: &msg.subject,
-                                partition: -1,
-                                key: "NatsKafka",
-                                value: String::from_utf8_lossy(&msg.data).as_bytes(),
-                            }).expect("Failed to send message to kafka server");
+                            return;
                          }
                     }
                 }
