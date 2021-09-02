@@ -1,10 +1,16 @@
 #![allow(non_snake_case)]
+use std::fs::File;
+use std::io::{prelude::*, BufReader};
 use std::{io::{self, Write}};
+use std::thread;
+use std::time::Duration;
 use kafka::producer::{Producer, Record};
 use kafka::consumer::Consumer;
 use nats;
 
-const DEBUG:bool = true;
+const CONFIGURATION_FILE:&str = "/tmp/Config.txt";
+const NUM_THREAD:i32 = 10;
+const DEBUG:bool = false;
 
 fn main() {
     println!("\n\n----------------------------------------------------");
@@ -14,19 +20,99 @@ fn main() {
     }
     println!("----------------------------------------------------\n");
 
+    let file = std::fs::File::create(CONFIGURATION_FILE).expect("create failed");
+
     println!("-- Nats configuration --");
-    let nats_server_url:String = getNatsServerUrl();
-    let nats_server_url_copy:String = nats_server_url.clone();
+    let file:std::fs::File = getNatsServerUrl(file);
 
     println!("\n-- Kafka configuration --");
-    let kafka_server_url:String = getKafkaServerUrl();
+    let file:std::fs::File = getKafkaServerUrl(file);
 
     println!("\n-- Subject configuration --\n");
-    let nats_subject:String = getSubject();
-    let kafka_subject:String = nats_subject.clone();
+    getSubject(file);
 
-    println!("\n-- Connector starting... --\n");
-    let producer: kafka::producer::Producer = match Producer::from_hosts(vec![kafka_server_url.clone()]).with_client_id("Thread 1".to_owned()).create() {
+    println!("\n-- Starting threads... --\n");
+
+    for x in 0..NUM_THREAD {
+        let _ =std::thread::spawn(|| {
+            natsKafkaConnection();
+        });
+        thread::sleep(Duration::from_millis(1));
+        let _ = std::thread::spawn(|| {
+           kafkaNatsConnection();
+        });
+    }
+
+    println!("\n\n----------------------------------------------------");
+    println!("Connector started");
+    println!("----------------------------------------------------\n");
+}
+
+fn getNatsServerUrl(mut file:std::fs::File) -> std::fs::File {
+    let mut nats_server_url = String::new();
+    print!("\nPort to connect to Nats server (nats://localhost:4222): ");
+    io::stdout().flush().unwrap();
+    io::stdin().read_line(&mut nats_server_url).expect("Error: can't read it.");
+
+    if nats_server_url == "\n" {
+        file.write_all("nats://localhost:4222".as_bytes()).expect("Failed to compile the Configuration file");
+    } else {
+        nats_server_url.remove(nats_server_url.len() - 1);
+    }
+    file.write_all(nats_server_url.as_bytes()).expect("Failed to compile the Configuration file");
+    return file;
+}
+
+fn getKafkaServerUrl(mut file:std::fs::File) -> std::fs::File {
+    let mut kafka_server_url = String::new();
+    print!("\nPort to connect to Kafka server (localhost:9092):");
+    io::stdout().flush().unwrap();
+    io::stdin().read_line(&mut kafka_server_url).expect("Error: can't read it.");
+
+    if kafka_server_url == "\n" {
+        file.write_all("localhost:9092".as_bytes()).expect("Failed to compile the Configuration file");
+    } else {
+        kafka_server_url.remove(kafka_server_url.len() - 1);
+    }
+    file.write_all(kafka_server_url.as_bytes()).expect("Failed to compile the Configuration file");
+    return file;
+}
+
+fn getSubject(mut file:std::fs::File) {
+    let mut subject = String::new();
+    loop {
+        print!("Enter the subject for sending and receiving messages with Nats and kafka server: ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut subject).expect("Error: can't read it.");
+
+        subject.remove(subject.len() - 1);
+        if subject.is_empty() {
+            println!("Error: You must enter a valid topic, retry.");
+        } else {
+            break;
+        }
+    }
+    file.write_all(subject.as_bytes()).expect("Failed to compile the Configuration file");
+}
+
+fn readConfigurationFile() -> Vec<String> {
+    let mut result = Vec::new();
+
+    let file = File::open(CONFIGURATION_FILE).unwrap();
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        result.push(line.unwrap());
+    }
+    return result;
+}
+
+fn natsKafkaConnection() {
+    let config:Vec<String> = readConfigurationFile();
+    println!("_{}_{}_{}_", config[0], config[1], config[2]);
+    //_nats://localhost:4222_localhost:9092_test_
+    
+    let mut prod: kafka::producer::Producer = match Producer::from_hosts(vec![config[1].clone()]).with_client_id("Thread 1".to_owned()).create() {
         Ok(v) => {
             if DEBUG {
                 println!("Connect to sever kafka (producer).");
@@ -41,81 +127,7 @@ fn main() {
         }
     };
 
-    let consumer: kafka::consumer::Consumer = match Consumer::from_hosts(vec![kafka_server_url]).with_client_id("Thread 2".to_owned()).with_topic(kafka_subject).create() {
-        Ok(v) => {
-            if DEBUG {
-                println!("Connect to sever kafka (consumer).");
-            }
-            v
-        }
-        Err(err) => {
-            if DEBUG {
-                println!("Error to connect to kafka server (consumer): {}",err);
-            }
-            return
-        }
-    };
-
-    let natsKafkaThread =std::thread::spawn(move || {
-        natsKafkaConnection(nats_server_url, producer, nats_subject);
-    });
-    let kafkaNatsThread = std::thread::spawn(move || {
-       kafkaNatsConnection(nats_server_url_copy, consumer);
-    });
-
-    let _ = natsKafkaThread.join();
-    let _ = kafkaNatsThread.join();
-
-    println!("\n\n----------------------------------------------------");
-    println!("Shutdown connector");
-    println!("----------------------------------------------------\n");
-}
-
-fn getNatsServerUrl() -> String {
-    let mut nats_server_url = String::new();
-    print!("\nPort to connect to Nats server (nats://localhost:4222): ");
-    io::stdout().flush().unwrap();
-    io::stdin().read_line(&mut nats_server_url).expect("Error: can't read it.");
-
-    if nats_server_url == "\n" {
-        nats_server_url = "nats://localhost:4222".to_string();
-    }
-    return nats_server_url;
-}
-
-fn getKafkaServerUrl() -> String {
-    let mut kafka_server_url = String::new();
-    print!("\nPort to connect to Kafka server (localhost:9092):");
-    io::stdout().flush().unwrap();
-    io::stdin().read_line(&mut kafka_server_url).expect("Error: can't read it.");
-
-    if kafka_server_url == "\n" {
-        return "localhost:9092".to_string();
-    } else {
-        return kafka_server_url;
-    }
-}
-
-fn getSubject() -> String {
-    let mut subject = String::new();
-    loop {
-        print!("Enter the subject for sending and receiving messages with Nats and kafka server: ");
-        io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut subject).expect("Error: can't read it.");
-
-        subject.remove(subject.len() - 1);
-        if subject.is_empty() {
-            println!("Error: You must enter a valid topic, retry.");
-        } else {
-            break;
-        }
-    }
-    return subject;
-}
-
-fn natsKafkaConnection(nats_server_url:String, producer:kafka::producer::Producer, nats_subject:String) {
-    let mut prod = producer;
-    let nc: nats::Connection = match nats::Options::new().with_name("NatsKafka").connect(&nats_server_url) {
+    let nc: nats::Connection = match nats::Options::new().with_name("NatsKafka").connect(&config[0].clone()) {
         Ok(v) =>  {
             if DEBUG {
                 println!("NatsKafka thread: Connect to sever Nats (consumer).");
@@ -130,7 +142,7 @@ fn natsKafkaConnection(nats_server_url:String, producer:kafka::producer::Produce
         }
     };
 
-    match nc.subscribe(&nats_subject) {
+    match nc.subscribe(&config[2]) {
         Ok(v) => {
             loop {
                 for msg in v.messages() {
@@ -149,10 +161,12 @@ fn natsKafkaConnection(nats_server_url:String, producer:kafka::producer::Produce
                             }
                         },
                         None => {
-                            if DEBUG {
-                                println!("NatsKafka thread: error to comunicate with nats server.");
-                            }
-                            return;
+                                prod.send(&Record {
+                                    topic: &msg.subject,
+                                    partition: -1,
+                                    key: "NatsKafka",
+                                    value: String::from_utf8_lossy(&msg.data).as_bytes(),
+                                }).expect("Failed to send message to kafka server");
                          }
                     }
                 }
@@ -166,9 +180,26 @@ fn natsKafkaConnection(nats_server_url:String, producer:kafka::producer::Produce
     };
 }
 
-fn kafkaNatsConnection(nats_server_url:String, consumer:kafka::consumer::Consumer) {
-    let mut cons = consumer;
-    let nc: nats::Connection = match nats::Options::new().with_name("KafkaNats").connect(&nats_server_url) {
+fn kafkaNatsConnection() {
+    let config:Vec<String> = readConfigurationFile(); 
+    println!("kafka_{}_{}_{}_", config[0], config[1], config[2]);
+    
+    let mut cons: kafka::consumer::Consumer = match Consumer::from_hosts(vec![config[1].clone()]).with_client_id("Thread 2".to_owned()).with_topic(config[2].clone()).create() {
+        Ok(v) => {
+            if DEBUG { 
+                println!("Connect to sever kafka (consumer).");
+            }
+            v
+        }
+        Err(err) => {
+            if DEBUG {
+                println!("Error to connect to kafka server (consumer): {}",err);
+            }
+            return
+        }
+    };
+
+    let nc: nats::Connection = match nats::Options::new().with_name("KafkaNats").connect(&config[0].clone()) {
         Ok(v) =>  {
             if DEBUG {
                 println!("KafkaNats thread: Connect to sever Nats (producer).");
