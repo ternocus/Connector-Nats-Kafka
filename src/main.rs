@@ -10,7 +10,7 @@ use nats;
 
 const CONFIGURATION_FILE:&str = "/tmp/Config.txt";
 const NUM_THREAD:i32 = 10;
-const DEBUG:bool = false;
+const DEBUG:bool = true;
 
 fn main() {
     println!("\n\n----------------------------------------------------");
@@ -109,8 +109,6 @@ fn readConfigurationFile() -> Vec<String> {
 
 fn natsKafkaConnection() {
     let config:Vec<String> = readConfigurationFile();
-    println!("_{}_{}_{}_", config[0], config[1], config[2]);
-    //_nats://localhost:4222_localhost:9092_test_
     
     let mut prod: kafka::producer::Producer = match Producer::from_hosts(vec![config[1].clone()]).with_client_id("Thread 1".to_owned()).create() {
         Ok(v) => {
@@ -182,7 +180,6 @@ fn natsKafkaConnection() {
 
 fn kafkaNatsConnection() {
     let config:Vec<String> = readConfigurationFile(); 
-    println!("kafka_{}_{}_{}_", config[0], config[1], config[2]);
     
     let mut cons: kafka::consumer::Consumer = match Consumer::from_hosts(vec![config[1].clone()]).with_client_id("Thread 2".to_owned()).with_topic(config[2].clone()).create() {
         Ok(v) => {
