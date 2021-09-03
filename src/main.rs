@@ -31,7 +31,7 @@ fn main() {
     println!("\n-- Subject configuration --\n");
     getSubject(file);
 
-    println!("\n-- Starting threads... --\n");
+    println!("\n-- Starting threads --\n");
 
     let mut thread:std::vec::Vec<std::thread::JoinHandle<()>> = Vec::new();
     thread.push(std::thread::spawn(|| {
@@ -78,6 +78,7 @@ fn getNatsServerUrl(mut file:std::fs::File) -> std::fs::File {
         nats_server_url.remove(nats_server_url.len() - 1);
     }
     file.write_all(nats_server_url.as_bytes()).expect("Failed to compile the Configuration file");
+    file.write_all("\n".as_bytes()).expect("Failed to compile the Configuration file");
     return file;
 }
 
@@ -93,6 +94,7 @@ fn getKafkaServerUrl(mut file:std::fs::File) -> std::fs::File {
         kafka_server_url.remove(kafka_server_url.len() - 1);
     }
     file.write_all(kafka_server_url.as_bytes()).expect("Failed to compile the Configuration file");
+    file.write_all("\n".as_bytes()).expect("Failed to compile the Configuration file");
     return file;
 }
 
