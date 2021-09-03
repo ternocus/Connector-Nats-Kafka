@@ -9,7 +9,7 @@ use kafka::consumer::Consumer;
 use nats;
 
 const CONFIGURATION_FILE:&str = "/tmp/Config.txt";
-const NUM_THREAD:i32 = 10;
+const NUM_THREAD:i32 = 1;
 const DEBUG:bool = true;
 
 fn main() {
@@ -33,18 +33,36 @@ fn main() {
 
     println!("\n-- Starting threads... --\n");
 
-    for x in 0..NUM_THREAD {
-        let _ =std::thread::spawn(|| {
+    let mut thread:std::vec::Vec<std::thread::JoinHandle<()>> = Vec::new();
+    thread.push(std::thread::spawn(|| {
+        natsKafkaConnection();
+    }));
+    thread::sleep(Duration::from_millis(1));
+    thread.push(std::thread::spawn(|| {
+       kafkaNatsConnection();
+    }));
+
+    for x in 1..NUM_THREAD {
+        thread.push(std::thread::spawn(|| {
             natsKafkaConnection();
-        });
+        }));
         thread::sleep(Duration::from_millis(1));
-        let _ = std::thread::spawn(|| {
+        thread.push(std::thread::spawn(|| {
            kafkaNatsConnection();
-        });
+        }));
     }
 
-    println!("\n\n----------------------------------------------------");
+    println!("----------------------------------------------------");
     println!("Connector started");
+    println!("----------------------------------------------------\n");
+
+    for y in 0..(NUM_THREAD*2) as usize{
+        let thr = thread.remove(y);
+        thr.join().unwrap();
+    }
+
+    println!("----------------------------------------------------");
+    println!("Connector stopped");
     println!("----------------------------------------------------\n");
 }
 
